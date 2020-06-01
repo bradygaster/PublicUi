@@ -1,0 +1,93 @@
+﻿@page "/"
+@using Google.Protobuf.WellKnownTypes
+@using Grpc.Core
+@using Grpc.Net.Client
+@using System.Threading
+@using System.Threading.Tasks
+@using static HeartbeatService.Heartbeat
+@using PublicUi.Shared
+@using Microsoft.AspNetCore.SignalR.Client
+@inject HttpClient Http
+@inject NavigationManager _navigationManager
+
+<div class="container">
+    <div class="row">
+        <div class="col-sm-12">
+            <h1>Blazor Dashboard UI</h1>
+            <SurveyPrompt Title="How is Blazor working for you?" />
+        </div>
+    </div>
+  <div class="row">
+      <div class="col-sm-6">
+        <RadzenChart style="float: right; width: 400px;">
+            <RadzenTooltipOptions Visible="false" />
+            <RadzenLegend Visible="false" />
+            <RadzenPieSeries Data="@_dataItems" 
+                Title="Host Count" 
+                CategoryProperty="Host" 
+                ValueProperty="Count" />
+        </RadzenChart>
+    </div>
+    <div class="col-sm-6">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col" colspan="2">Heartbeat Host Distribution</th>
+                </tr>
+            </thead>
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Host</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var dataItem in _dataItems)
+            {
+                <tr>
+                    <th scope="row">@dataItem.Count</th>
+                    <td>@dataItem.Host</td>
+                </tr> 
+            }
+            </tbody>
+        </table>
+    </div>
+  </div>
+</div>
+
+@code {
+    class DataItem {
+        public string Host { get; set; }
+        public int Count { get; set; }
+    }
+
+    List<DataItem> _dataItems = new List<DataItem> ();
+
+    string _lastHostNameReceived;
+    protected override async Task OnInitializedAsync () {
+        var url = _navigationManager.ToAbsoluteUri (Strings.HeartbeatHubUrl);
+        var connection = new HubConnectionBuilder ()
+            .WithUrl (url)
+            .WithAutomaticReconnect ()
+            .Build ();
+
+        connection.On<string, DateTime> (Strings.HeartbeatReceivedEventName, (hostName, hostTimeStamp) => {
+            _lastHostNameReceived = hostName;
+
+            if (_dataItems.Any (x => x.Host == _lastHostNameReceived)) {
+                _dataItems.First (x => x.Host == _lastHostNameReceived).Count += 1;
+            } else {
+                _dataItems.Add (new DataItem {
+                    Count = 1,
+                        Host = _lastHostNameReceived
+                });
+            }
+
+            _dataItems = _dataItems.OrderByDescending (x => x.Count).ToList ();
+
+            StateHasChanged ();
+        });
+
+        await connection.StartAsync ();
+    }
+}
